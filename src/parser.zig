@@ -82,13 +82,13 @@ const Flags = struct {
     have_approx: bool,
     /// If this flag is set the top-level submatch is not captured.
     no_first_subm: bool,
-    /// The highest back reference or -1 if none seen so far
-    max_backref: i32,
+    /// The highest back reference or null if none seen so far
+    max_backref: ?u32,
 
     const default: Flags = .{
         .have_approx = false,
         .no_first_subm = false,
-        .max_backref = -1,
+        .max_backref = null,
     };
 };
 
