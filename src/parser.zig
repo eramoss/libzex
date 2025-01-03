@@ -21,7 +21,17 @@ const Parser = struct {
     flags: Flags,
     cflags: CompFlags,
     pub fn init(alloc: Allocator, re: []const u8, flags: Flags, cflags: CompFlags) !Parser {
-        return Parser{ .alloc = alloc, .stack = try Parser.init_stack(alloc, re), .re = re, .re_start = re[0], .re_end = re[re.len - 1], .flags = flags, .cflags = cflags, .result = undefined, .submatch_id = 0 };
+        return Parser{
+            .alloc = alloc,
+            .stack = ArrayList(Symbol).init(alloc),
+            .re = re,
+            .re_start = re[0],
+            .re_end = re[re.len - 1],
+            .flags = flags,
+            .cflags = cflags,
+            .result = undefined,
+            .submatch_id = 0,
+        };
     }
 
     pub fn deinit(self: Parser) void {
@@ -64,12 +74,6 @@ const Parser = struct {
             }
         }
         return self.result;
-    }
-
-    fn init_stack(alloc: Allocator, re: []const u8) !ArrayList(Symbol) {
-        _ = re;
-        const stack = ArrayList(Symbol).init(alloc);
-        return stack;
     }
 };
 
