@@ -39,7 +39,6 @@ const Parser = struct {
     }
 
     pub fn parse(self: *Parser) !*AstNode {
-        var status: RegStatus = RegStatus.REG_OK;
         var symbol: Symbol = undefined;
         const bottom = self.stack.items.len;
         var depth: u32 = 0;
@@ -60,7 +59,7 @@ const Parser = struct {
 
         // The following is basically a recursive descent parser algorithm.
         // it has your own stack to keep track of elements easily and more efficient;
-        while (self.stack.items.len > bottom and status == RegStatus.REG_OK) {
+        while (self.stack.items.len > bottom) {
             symbol = self.stack.pop().symbol; // its ok it breaks if access symbol in case of pop Node, so it never occurs :)
             switch (symbol) {
                 .RE => PARSE_RE_BLK: {
@@ -94,7 +93,7 @@ const Parser = struct {
                             (c == '\\' and self.re[re_i + 1] == ')'))
                         {
                             if (!cflags.reg_extended and depth == 0) {
-                                status = RegStatus.REG_EPAREN;
+                                return error.REG_EPAREN;
                             }
                             debug("parser:  group end: {s}", .{self.re[re_i..]});
                             assert(depth > 0);
@@ -208,24 +207,6 @@ const CompFlags = struct {
         .reg_approx_matcher = false,
         .reg_backtracking_matcher = false,
     };
-};
-
-const RegStatus = enum {
-    REG_OK,
-    REG_NOMATCH,
-    REG_BADPAT,
-    REG_ECOLLATE,
-    REG_ECTYPE,
-    REG_EESCAPE,
-    REG_ESUBREG,
-    REG_EBRACK,
-    REG_EPAREN,
-    REG_EBRACE,
-    REG_BADBR,
-    REG_ERANGE,
-    REG_ESPACE,
-    REG_BADRPT,
-    REG_BADMAX,
 };
 
 test "try init parser" {
