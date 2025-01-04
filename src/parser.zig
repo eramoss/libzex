@@ -61,7 +61,7 @@ const Parser = struct {
         // The following is basically a recursive descent parser algorithm.
         // it has your own stack to keep track of elements easily and more efficient;
         while (self.stack.items.len > bottom and status == RegStatus.REG_OK) {
-            symbol = self.stack.pop().symbol;
+            symbol = self.stack.pop().symbol; // its ok it breaks if access symbol in case of pop Node, so it never occurs :)
             switch (symbol) {
                 .RE => {
                     // Parse a full regexp. A regexp is one or more branches separated by union op `|`
