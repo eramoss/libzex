@@ -19,8 +19,7 @@ const Parser = struct {
 
     submatch_id: u32,
     flags: Flags,
-    cflags: CompFlags,
-    pub fn init(alloc: Allocator, re: []const u8, flags: Flags, cflags: CompFlags) !Parser {
+    pub fn init(alloc: Allocator, re: []const u8, flags: Flags) !Parser {
         return Parser{
             .alloc = alloc,
             .stack = ArrayList(Symbol).init(alloc),
@@ -28,7 +27,6 @@ const Parser = struct {
             .re_start = re[0],
             .re_end = re[re.len - 1],
             .flags = flags,
-            .cflags = cflags,
             .result = undefined,
             .submatch_id = 0,
         };
@@ -42,11 +40,14 @@ const Parser = struct {
         var symbol: Symbol = undefined;
         const bottom = self.stack.items.len;
         //        var depth = 0;
-        //
+
+        const flags = self.flags;
+        const cflags = flags.cflags;
+
         assert(self.re.len > 0);
         debug("Parser: start parsing {s}, len: {d}\n", .{ self.re, self.re.len });
 
-        if (!self.flags.no_first_subm) {
+        if (!flags.no_first_subm) {
             try self.stack.append(std.meta.intToEnum(Symbol, self.submatch_id) catch unreachable);
             try self.stack.append(Symbol.MARK_FOR_SUBMATCH);
             self.submatch_id += 1;
@@ -61,7 +62,7 @@ const Parser = struct {
             switch (symbol) {
                 .RE => {
                     // Parse a full regexp. A regexp is one or more branches separated by union op `|`
-                    if (!self.cflags.reg_literal and self.cflags.reg_extended) {
+                    if (!cflags.reg_literal and cflags.reg_extended) {
                         try self.stack.append(Symbol.UNION);
                     }
                     try self.stack.append(Symbol.BRANCH);
@@ -85,10 +86,12 @@ const Flags = struct {
     /// The highest back reference or null if none seen so far
     max_backref: ?u32,
 
+    cflags: CompFlags,
     const default: Flags = .{
         .have_approx = false,
         .no_first_subm = false,
         .max_backref = null,
+        .cflags = CompFlags.default,
     };
 };
 
@@ -125,7 +128,7 @@ const CompFlags = struct {
 };
 
 test "try init parser" {
-    var p = try Parser.init(testing.allocator, "{}[]()^$.|*+?", Flags.default, CompFlags.default);
+    var p = try Parser.init(testing.allocator, "{}[]()^$.|*+?", Flags.default);
     defer p.deinit();
     _ = try p.parse();
 }
