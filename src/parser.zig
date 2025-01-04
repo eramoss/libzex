@@ -15,7 +15,7 @@ const StackType = union(enum) {
 const Parser = struct {
     alloc: Allocator,
     stack: ArrayList(StackType),
-    result: []ast.AstNode,
+    result: *AstNode,
 
     re: []const u8,
     re_i: u32,
@@ -38,7 +38,7 @@ const Parser = struct {
         self.stack.deinit();
     }
 
-    pub fn parse(self: *Parser) ![]ast.AstNode {
+    pub fn parse(self: *Parser) !*AstNode {
         var status: RegStatus = RegStatus.REG_OK;
         var symbol: Symbol = undefined;
         const bottom = self.stack.items.len;
@@ -63,30 +63,31 @@ const Parser = struct {
         while (self.stack.items.len > bottom and status == RegStatus.REG_OK) {
             symbol = self.stack.pop().symbol; // its ok it breaks if access symbol in case of pop Node, so it never occurs :)
             switch (symbol) {
-                .RE => {
+                .RE => PARSE_RE_BLK: {
                     // Parse a full regexp. A regexp is one or more branches separated by union op `|`
                     if (!cflags.reg_literal and cflags.reg_extended) {
                         try self.stack.append(StackType{ .symbol = Symbol.UNION });
                     }
                     try self.stack.append(StackType{ .symbol = Symbol.BRANCH });
-                    break;
+                    break :PARSE_RE_BLK;
                 },
-                .BRANCH => {
+                .BRANCH => PARSE_BRANCH_BLK: {
                     try self.stack.append(StackType{ .symbol = Symbol.CATENATION });
                     try self.stack.append(StackType{ .symbol = Symbol.PIECE });
-                    break;
+                    break :PARSE_BRANCH_BLK;
                 },
-                .PIECE => {
+                .PIECE => PARSE_PIECE_BLK: {
                     if (!cflags.reg_literal) {
                         try self.stack.append(StackType{ .symbol = Symbol.POSTFIX });
                     }
                     try self.stack.append(StackType{ .symbol = Symbol.ATOM });
+                    break :PARSE_PIECE_BLK;
                 },
-                .CATENATION => cat_blk: {
-                    if (re_i >= self.re.len) break :cat_blk;
+                .CATENATION => PARSE_CAT_BLK: {
+                    if (re_i >= self.re.len) break :PARSE_CAT_BLK;
                     const c = self.re[re_i];
                     if (!cflags.reg_literal) {
-                        if (cflags.reg_extended and c == '|') break :cat_blk;
+                        if (cflags.reg_extended and c == '|') break :PARSE_CAT_BLK;
 
                         if ((cflags.reg_extended and c == ')' and depth > 0) or
                             (!cflags.reg_extended) and
@@ -96,14 +97,36 @@ const Parser = struct {
                                 status = RegStatus.REG_EPAREN;
                             }
                             debug("parser:  group end: {s}", .{self.re[re_i..]});
+                            assert(depth > 0);
                             depth -= 1;
                             if (!cflags.reg_extended)
                                 re_i += 2;
-                            break;
+                            break :PARSE_CAT_BLK;
                         }
                     }
+
+                    if (cflags.reg_right_assoc) {
+                        // right associative concatenation
+                        try self.stack.append(StackType{ .node = self.result });
+                        try self.stack.append(StackType{ .symbol = Symbol.POST_CATENATION });
+                        try self.stack.append(StackType{ .symbol = Symbol.CATENATION });
+                        try self.stack.append(StackType{ .symbol = Symbol.PIECE });
+                    } else {
+                        // left associative concatenation (default)
+                        try self.stack.append(StackType{ .symbol = Symbol.CATENATION });
+                        try self.stack.append(StackType{ .node = self.result });
+
+                        try self.stack.append(StackType{ .symbol = Symbol.POST_CATENATION });
+                        try self.stack.append(StackType{ .symbol = Symbol.PIECE });
+                    }
+                    break :PARSE_CAT_BLK;
                 },
-                .POST_CATENATION => {},
+                .POST_CATENATION => PARSE_POST_CAT_BLK: {
+                    const tree: *AstNode = self.stack.pop().node; // asserts node after post catenation
+                    const tmp_node = try tree.new_catenation(self.result);
+                    self.result = tmp_node;
+                    break :PARSE_POST_CAT_BLK;
+                },
                 .UNION => {},
                 .POST_UNION => {},
                 .POSTFIX => {},
@@ -113,6 +136,28 @@ const Parser = struct {
             }
         }
         return self.result;
+    }
+
+    fn debug_stack(self: Parser) void {
+        debug("Stack:", .{});
+        for (self.stack.items, 1..) |e, i| {
+            const padding = repeat(self.alloc, "\t", i) catch "\t";
+            debug("{s}{}\n", .{ padding, e });
+            self.alloc.free(padding);
+        }
+
+        debug("\n", .{});
+    }
+
+    fn repeat(alloc: Allocator, s: []const u8, times: usize) ![]u8 {
+        const repeated = try alloc.alloc(u8, s.len * times);
+
+        var i: usize = 0;
+        while (i < s.len * times) : (i += 1) {
+            repeated[i] = s[i % (s.len)];
+        }
+
+        return repeated;
     }
 };
 
@@ -184,7 +229,7 @@ const RegStatus = enum {
 };
 
 test "try init parser" {
-    var p = try Parser.init(testing.allocator, "{}[]()^$.|*+?", Flags.default);
+    var p = try Parser.init(testing.allocator, "\\d{2}", Flags.default);
     defer p.deinit();
     _ = try p.parse();
 }
