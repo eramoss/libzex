@@ -204,6 +204,7 @@ const Parser = struct {
                         },
                         else => break,
                     }
+                    break :PARSE_POSTFIX_BLK;
                 },
                 .ATOM => {},
                 .MARK_FOR_SUBMATCH => {},
