@@ -43,6 +43,7 @@ const Parser = struct {
         const bottom = self.stack.items.len;
         var depth: u32 = 0;
         var re_i = self.re_i;
+        const max_re_i = self.re.len - 1;
         const flags = self.flags;
         const cflags = flags.cflags;
 
@@ -83,8 +84,9 @@ const Parser = struct {
                     break :PARSE_PIECE_BLK;
                 },
                 .CATENATION => PARSE_CAT_BLK: {
-                    if (re_i >= self.re.len) break :PARSE_CAT_BLK;
+                    if (re_i >= max_re_i) break :PARSE_CAT_BLK;
                     const c = self.re[re_i];
+                    debug("debug catenations with c = {c}\n", .{c});
                     if (!cflags.reg_literal) {
                         if (cflags.reg_extended and c == '|') break :PARSE_CAT_BLK;
 
@@ -95,7 +97,7 @@ const Parser = struct {
                             if (!cflags.reg_extended and depth == 0) {
                                 return error.REG_EPAREN;
                             }
-                            debug("parser:  group end: {s}", .{self.re[re_i..]});
+                            debug("parser:  group end: {s}\n", .{self.re[re_i..]});
                             assert(depth > 0);
                             depth -= 1;
                             if (!cflags.reg_extended)
@@ -126,15 +128,94 @@ const Parser = struct {
                     self.result = tmp_node;
                     break :PARSE_POST_CAT_BLK;
                 },
-                .UNION => {},
-                .POST_UNION => {},
-                .POSTFIX => {},
+                .UNION => PARSE_UNION_BLK: {
+                    if (re_i >= max_re_i) break :PARSE_UNION_BLK;
+                    if (cflags.reg_literal) break :PARSE_UNION_BLK;
+
+                    switch (self.re[re_i]) {
+                        '|' => {
+                            debug("parse:  union: {s}\n", .{self.re[re_i..]});
+                            try self.stack.append(StackType{ .symbol = Symbol.UNION });
+                            try self.stack.append(StackType{ .node = self.result });
+                            try self.stack.append(StackType{ .symbol = Symbol.POST_UNION });
+                            try self.stack.append(StackType{ .symbol = Symbol.BRANCH });
+                            re_i += 1;
+                        },
+                        ')' => re_i += 1,
+                        else => break :PARSE_UNION_BLK,
+                    }
+                    break :PARSE_UNION_BLK;
+                },
+                .POST_UNION => PARSE_POST_UNION_BLK: {
+                    const tree: *AstNode = self.stack.pop().node; // asserts node after post catenation
+                    const tmp_node = try tree.new_union(self.result);
+                    self.result = tmp_node;
+                    break :PARSE_POST_UNION_BLK;
+                },
+
+                .POSTFIX => PARSE_POSTFIX_BLK: {
+                    if (re_i >= max_re_i) break :PARSE_POSTFIX_BLK;
+                    if (cflags.reg_literal) break :PARSE_POSTFIX_BLK;
+                    const c = self.re[re_i];
+                    switch (c) {
+                        '+', '?', '*' => {
+                            if (!cflags.reg_extended and (self.re[re_i] == '+' or self.re[re_i] == '?')) break;
+                            const minimal: bool = !(cflags.reg_ungreedy);
+                            const dbug_re = self.re;
+                            var rep_min: i32 = 0;
+                            var rep_max: i32 = -1;
+
+                            if (self.re[re_i] == '+') rep_min = 1;
+                            if (self.re[re_i] == '?') rep_max = 1;
+
+                            if (re_i + 1 < max_re_i) {
+                                const nc = self.re[re_i + 1];
+                                if (nc == '?') re_i += 1;
+                                if (nc == '*' or nc == '+') {
+                                    // reserved for future extensions on regexp
+                                    return error.REG_BADRPT;
+                                }
+                            }
+                            debug("parse: minimal = {} star: {s}\n", .{ minimal, dbug_re });
+                            re_i += 1;
+                            self.result = try self.result.new_iter(rep_min, rep_max, minimal);
+                            try self.stack.append(StackType{ .symbol = Symbol.POSTFIX });
+                        },
+                        '\\' => {
+                            // "\{" is special without REG_EXTENDED
+                            if (!cflags.reg_extended and re_i + 1 < max_re_i and self.re[re_i + 1] == '{') {
+                                re_i += 1;
+                                debug("parse:  bound: {s}\n", .{self.re[re_i..]});
+                                // entering in parse bound at postfix brace
+                                re_i += 1;
+                                try self.parse_bound();
+                                try self.stack.append(StackType{ .symbol = Symbol.POSTFIX });
+                            }
+                        },
+                        '{' => {
+                            // jjust a literal withou reg_extended so its the sameof above
+                            // THINK ABOUT: maybe refactor that into another function? nhaaan;
+                            if (!cflags.reg_extended) break;
+                            debug("parse:  bound: {s}\n", .{self.re[re_i..]});
+                            // entering in parse bound at postfix brace
+                            re_i += 1;
+                            try self.parse_bound();
+                            try self.stack.append(StackType{ .symbol = Symbol.POSTFIX });
+                        },
+                        else => break,
+                    }
+                },
                 .ATOM => {},
                 .MARK_FOR_SUBMATCH => {},
                 .RESTORE_CFLAGS => {},
             }
         }
         return self.result;
+    }
+
+    fn parse_bound(self: *Parser) !void {
+        _ = self;
+        debug("PARSE BOUND NOT IMPLEMENTED YET", .{});
     }
 
     fn debug_stack(self: Parser) void {
