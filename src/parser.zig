@@ -94,7 +94,7 @@ const Parser = struct {
                             (c == '\\' and self.re[self.re_i + 1] == ')'))
                         {
                             if (!cflags.reg_extended and depth == 0) {
-                                return error.REG_EPAREN;
+                                return error.ParenNotMatched;
                             }
                             debug("parser:  group end: {s}\n", .{self.re[self.re_i..]});
                             assert(depth > 0);
@@ -170,10 +170,8 @@ const Parser = struct {
                             if (self.re_i + 1 < max_re_i) {
                                 const nc = self.re[self.re_i + 1];
                                 if (nc == '?') self.re_i += 1;
-                                if (nc == '*' or nc == '+') {
-                                    // reserved for future extensions on regexp
-                                    return error.REG_BADRPT;
-                                }
+                                if (nc == '*' or nc == '+')
+                                    return error.InvalidRepeatedChar;
                             }
                             debug("parse: minimal = {} star: {s}\n", .{ minimal, dbug_re });
                             self.re_i += 1;
