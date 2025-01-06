@@ -192,7 +192,7 @@ const Parser = struct {
                             }
                         },
                         '{' => {
-                            // jjust a literal withou reg_extended so its the sameof above
+                            // just a literal without reg_extended so its the same of above
                             // THINK ABOUT: maybe refactor that into another function? nhaaan;
                             if (!cflags.reg_extended) break;
                             debug("parse:  bound: {s}\n", .{self.re[self.re_i..]});
