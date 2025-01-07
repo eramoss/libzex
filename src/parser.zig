@@ -2,10 +2,11 @@ const std = @import("std");
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const ast = @import("ast.zig");
+const AstNode = ast.AstNode;
+const ut = @import("utils.zig");
 const assert = std.debug.assert;
 const debug = std.debug.print;
 const testing = std.testing;
-const AstNode = ast.AstNode;
 
 const Symbol = enum { RE, ATOM, MARK_FOR_SUBMATCH, BRANCH, PIECE, CATENATION, POST_CATENATION, UNION, POST_UNION, POSTFIX, RESTORE_CFLAGS };
 const StackType = union(enum) {
@@ -219,23 +220,12 @@ const Parser = struct {
     fn debug_stack(self: Parser) void {
         debug("Stack:", .{});
         for (self.stack.items, 1..) |e, i| {
-            const padding = repeat(self.alloc, "\t", i) catch "\t";
+            const padding = ut.repeat(self.alloc, "\t", i) catch "\t";
             debug("{s}{}\n", .{ padding, e });
             self.alloc.free(padding);
         }
 
         debug("\n", .{});
-    }
-
-    fn repeat(alloc: Allocator, s: []const u8, times: usize) ![]u8 {
-        const repeated = try alloc.alloc(u8, s.len * times);
-
-        var i: usize = 0;
-        while (i < s.len * times) : (i += 1) {
-            repeated[i] = s[i % (s.len)];
-        }
-
-        return repeated;
     }
 };
 
