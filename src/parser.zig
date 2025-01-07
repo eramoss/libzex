@@ -3,6 +3,7 @@ const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const ast = @import("ast.zig");
 const AstNode = ast.AstNode;
+const LeafType = ast.LeafType;
 const ut = @import("utils.zig");
 const assert = std.debug.assert;
 const debug = std.debug.print;
@@ -17,7 +18,6 @@ const StackType = union(enum) {
 const Parser = struct {
     alloc: Allocator,
     stack: ArrayList(StackType),
-    result: *AstNode,
 
     re: []const u8,
     re_i: u32,
@@ -33,7 +33,6 @@ const Parser = struct {
             .re_i = 0,
             .flags = flags,
             .cflags = cflags,
-            .result = undefined,
             .submatch_id = 0,
         };
     }
@@ -43,6 +42,7 @@ const Parser = struct {
     }
 
     pub fn parse(self: *Parser) !*AstNode {
+        var result: *AstNode = undefined;
         var symbol: Symbol = undefined;
         const bottom = self.stack.items.len;
         var depth: u32 = 0;
@@ -111,14 +111,14 @@ const Parser = struct {
 
                     if (self.cflags.reg_right_assoc) {
                         // right associative concatenation
-                        try self.stack.append(StackType{ .node = self.result });
+                        try self.stack.append(StackType{ .node = result });
                         try self.stack.append(StackType{ .symbol = Symbol.POST_CATENATION });
                         try self.stack.append(StackType{ .symbol = Symbol.CATENATION });
                         try self.stack.append(StackType{ .symbol = Symbol.PIECE });
                     } else {
                         // left associative concatenation (default)
                         try self.stack.append(StackType{ .symbol = Symbol.CATENATION });
-                        try self.stack.append(StackType{ .node = self.result });
+                        try self.stack.append(StackType{ .node = result });
 
                         try self.stack.append(StackType{ .symbol = Symbol.POST_CATENATION });
                         try self.stack.append(StackType{ .symbol = Symbol.PIECE });
@@ -127,8 +127,8 @@ const Parser = struct {
                 },
                 .POST_CATENATION => PARSE_POST_CAT_BLK: {
                     const tree: *AstNode = self.stack.pop().node; // asserts node after post catenation
-                    const tmp_node = try tree.new_catenation(self.result);
-                    self.result = tmp_node;
+                    const tmp_node = try tree.new_catenation(result);
+                    result = tmp_node;
                     break :PARSE_POST_CAT_BLK;
                 },
                 .UNION => PARSE_UNION_BLK: {
@@ -139,7 +139,7 @@ const Parser = struct {
                         '|' => {
                             debug("parse:  union: {s}\n", .{self.re[self.re_i..]});
                             try self.stack.append(StackType{ .symbol = Symbol.UNION });
-                            try self.stack.append(StackType{ .node = self.result });
+                            try self.stack.append(StackType{ .node = result });
                             try self.stack.append(StackType{ .symbol = Symbol.POST_UNION });
                             try self.stack.append(StackType{ .symbol = Symbol.BRANCH });
                             self.re_i += 1;
@@ -151,8 +151,8 @@ const Parser = struct {
                 },
                 .POST_UNION => PARSE_POST_UNION_BLK: {
                     const tree: *AstNode = self.stack.pop().node; // asserts node after post catenation
-                    const tmp_node = try tree.new_union(self.result);
-                    self.result = tmp_node;
+                    const tmp_node = try tree.new_union(result);
+                    result = tmp_node;
                     break :PARSE_POST_UNION_BLK;
                 },
 
@@ -179,7 +179,7 @@ const Parser = struct {
                             }
                             debug("parse: minimal = {} star: {s}\n", .{ minimal, dbug_re });
                             self.re_i += 1;
-                            self.result = try self.result.new_iter(rep_min, rep_max, minimal);
+                            result = try result.new_iter(rep_min, rep_max, minimal);
                             try self.stack.append(StackType{ .symbol = Symbol.POSTFIX });
                         },
                         '\\' => {
@@ -189,7 +189,7 @@ const Parser = struct {
                                 debug("parse:  bound: {s}\n", .{self.re[self.re_i..]});
                                 // entering in parse bound at postfix brace
                                 self.re_i += 1;
-                                try self.parse_bound();
+                                try self.parse_bound(&result);
                                 try self.stack.append(StackType{ .symbol = Symbol.POSTFIX });
                             }
                         },
@@ -200,7 +200,7 @@ const Parser = struct {
                             debug("parse:  bound: {s}\n", .{self.re[self.re_i..]});
                             // entering in parse bound at postfix brace
                             self.re_i += 1;
-                            try self.parse_bound();
+                            try self.parse_bound(&result);
                             try self.stack.append(StackType{ .symbol = Symbol.POSTFIX });
                         },
                         else => break,
@@ -296,6 +296,30 @@ const Parser = struct {
                                     break :ctx_blk;
                                 }
                             },
+                            ')' => {
+                                if ((self.cflags.reg_extended and depth > 0) or (!self.sflags.reg_extended and self.re_i > 0 and self.re[self.re_i - 1] == '\\')) {
+                                    debug("parse:  empty: {s}\n", .{self.re[self.re_i..]});
+                                    // expect atom, butreceive a subexp closed
+                                    //  POSIX leaves that o impl def, here i interpret this as empty
+                                    result = try AstNode.new_literal(LeafType.EMPTY, LeafType.EMPTY);
+                                    if (!self.cflags.reg_extended) self.re_i -= 1;
+                                } else {
+                                    parse_literal = true;
+                                    break :ctx_blk;
+                                }
+                            },
+                            '[' => {
+                                debug("parse:  bracket: {s}\n", .{self.re[self.re_i..]});
+                                self.re_i += 1;
+                                try self.parse_bracket(&result);
+                            },
+                            '\\' => {
+                                // if this is a `\(` or `\)` remove slash and try again
+                                if ((self.cflags.reg_extended) and self.re_i + 1 < max_re_i and (self.re[self.re_i + 1] == '(' or self.re[self.re_i + 1] == ')')) {
+                                    self.re_i += 1;
+                                    try self.stack.append(StackType{ .symbol = Symbol.ATOM });
+                                }
+                            },
                             else => {},
                         }
                     }
@@ -317,12 +341,19 @@ const Parser = struct {
                 },
             }
         }
-        return self.result;
+        return result;
     }
 
-    fn parse_bound(self: *Parser) !void {
+    fn parse_bound(self: *Parser, result: **AstNode) !void {
         _ = self;
+        _ = result;
         debug("PARSE BOUND NOT IMPLEMENTED YET", .{});
+        assert(false);
+    }
+    fn parse_bracket(self: *Parser, result: **AstNode) !void {
+        _ = self;
+        _ = result;
+        debug("PARSE BRACKET NOT IMPLEMENTED YET", .{});
         assert(false);
     }
 
