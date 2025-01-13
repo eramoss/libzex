@@ -18,6 +18,9 @@ pub const Assertion = enum(i16) {
 };
 
 pub const AstNode = struct {
+    num_submatches: i32,
+    submatch_id: i32,
+
     pub fn new_catenation(left: *AstNode, right: *AstNode) !*AstNode {
         _ = left;
         return right;

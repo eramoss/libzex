@@ -15,6 +15,7 @@ const StackType = union(enum) {
     symbol: Symbol,
     node: *AstNode,
     cflags: CompFlags, // to make some changes on speifcs groups without corrupting all
+    int: i32,
 };
 
 const Macro = struct {
@@ -44,7 +45,7 @@ const Parser = struct {
     re: []const u8,
     re_i: u32,
 
-    submatch_id: u32,
+    submatch_id: i32,
     flags: Flags,
     cflags: CompFlags,
     pub fn init(alloc: Allocator, re: []const u8, flags: Flags, cflags: CompFlags) !Parser {
@@ -64,7 +65,7 @@ const Parser = struct {
     }
 
     pub fn parse(self: *Parser) !*AstNode {
-        var result: *AstNode = undefined;
+        var result: ?*AstNode = null;
         var symbol: Symbol = undefined;
         const bottom = self.stack.items.len;
         var depth: u32 = 0;
@@ -76,7 +77,7 @@ const Parser = struct {
         debug("Parser: start parsing {s}, len: {d}\n", .{ self.re, self.re.len });
 
         if (!flags.no_first_subm) {
-            try self.stack.append(StackType{ .symbol = std.meta.intToEnum(Symbol, self.submatch_id) catch unreachable });
+            try self.stack.append(StackType{ .int = self.submatch_id });
             try self.stack.append(StackType{ .symbol = Symbol.MARK_FOR_SUBMATCH });
             self.submatch_id += 1;
         }
@@ -132,14 +133,14 @@ const Parser = struct {
 
                     if (self.cflags.reg_right_assoc) {
                         // right associative concatenation
-                        try self.stack.append(StackType{ .node = result });
+                        try self.stack.append(StackType{ .node = result.? });
                         try self.stack.append(StackType{ .symbol = Symbol.POST_CATENATION });
                         try self.stack.append(StackType{ .symbol = Symbol.CATENATION });
                         try self.stack.append(StackType{ .symbol = Symbol.PIECE });
                     } else {
                         // left associative concatenation (default)
                         try self.stack.append(StackType{ .symbol = Symbol.CATENATION });
-                        try self.stack.append(StackType{ .node = result });
+                        try self.stack.append(StackType{ .node = result.? });
 
                         try self.stack.append(StackType{ .symbol = Symbol.POST_CATENATION });
                         try self.stack.append(StackType{ .symbol = Symbol.PIECE });
@@ -148,7 +149,7 @@ const Parser = struct {
                 },
                 .POST_CATENATION => PARSE_POST_CAT_BLK: {
                     const tree: *AstNode = self.stack.pop().node; // asserts node after post catenation
-                    const tmp_node = try tree.new_catenation(result);
+                    const tmp_node = try AstNode.new_catenation(tree, result.?);
                     result = tmp_node;
                     break :PARSE_POST_CAT_BLK;
                 },
@@ -160,7 +161,7 @@ const Parser = struct {
                         '|' => {
                             debug("Parser:  union: {s}\n", .{self.re[self.re_i..]});
                             try self.stack.append(StackType{ .symbol = Symbol.UNION });
-                            try self.stack.append(StackType{ .node = result });
+                            try self.stack.append(StackType{ .node = result.? });
                             try self.stack.append(StackType{ .symbol = Symbol.POST_UNION });
                             try self.stack.append(StackType{ .symbol = Symbol.BRANCH });
                             self.re_i += 1;
@@ -172,7 +173,7 @@ const Parser = struct {
                 },
                 .POST_UNION => PARSE_POST_UNION_BLK: {
                     const tree: *AstNode = self.stack.pop().node; // asserts node after post catenation
-                    const tmp_node = try tree.new_union(result);
+                    const tmp_node = try tree.new_union(result.?);
                     result = tmp_node;
                     break :PARSE_POST_UNION_BLK;
                 },
@@ -200,7 +201,7 @@ const Parser = struct {
                             }
                             debug("Parser: minimal = {} star: {s}\n", .{ minimal, dbug_re });
                             self.re_i += 1;
-                            result = try result.new_iter(rep_min, rep_max, minimal);
+                            result = try result.?.new_iter(rep_min, rep_max, minimal);
                             try self.stack.append(StackType{ .symbol = Symbol.POSTFIX });
                         },
                         '\\' => {
@@ -210,7 +211,7 @@ const Parser = struct {
                                 debug("Parser:  bound: {s}\n", .{self.re[self.re_i..]});
                                 // entering in parse bound at postfix brace
                                 self.re_i += 1;
-                                try self.parse_bound(&result);
+                                try self.parse_bound(&result.?);
                                 try self.stack.append(StackType{ .symbol = Symbol.POSTFIX });
                             }
                         },
@@ -221,7 +222,7 @@ const Parser = struct {
                             debug("Parser:  bound: {s}\n", .{self.re[self.re_i..]});
                             // entering in parse bound at postfix brace
                             self.re_i += 1;
-                            try self.parse_bound(&result);
+                            try self.parse_bound(&result.?);
                             try self.stack.append(StackType{ .symbol = Symbol.POSTFIX });
                         },
                         else => break,
@@ -307,7 +308,7 @@ const Parser = struct {
                                     } else {
                                         debug("Parser:  group begin: '{s}', submatch = {d}\n", .{ self.re[self.re_i..], self.submatch_id });
                                         self.re_i += 1;
-                                        try self.stack.append(StackType{ .symbol = std.meta.intToEnum(Symbol, self.submatch_id) catch unreachable });
+                                        try self.stack.append(StackType{ .int = self.submatch_id });
                                         try self.stack.append(StackType{ .symbol = Symbol.MARK_FOR_SUBMATCH });
                                         try self.stack.append(StackType{ .symbol = Symbol.RE });
                                         self.submatch_id += 1;
@@ -332,7 +333,7 @@ const Parser = struct {
                             '[' => {
                                 debug("Parser:  bracket: {s}\n", .{self.re[self.re_i..]});
                                 self.re_i += 1;
-                                try self.parse_bracket(&result);
+                                try self.parse_bracket(&result.?);
                             },
                             '\\' => {
                                 // if this is a `\(` or `\)` remove slash and try again
@@ -520,13 +521,25 @@ const Parser = struct {
                     }
                     break :PARSE_ATOM_BLK;
                 },
-                .MARK_FOR_SUBMATCH => {},
+                .MARK_FOR_SUBMATCH => {
+                    const submatch_id = self.stack.pop().int;
+                    assert(result != null);
+                    if (result.?.submatch_id >= 0) {
+                        const n = try AstNode.new_literal(@intFromEnum(LeafType.EMPTY), -1);
+
+                        var tmp_node = try AstNode.new_catenation(n, result.?);
+                        tmp_node.num_submatches = result.?.num_submatches;
+                        result = tmp_node;
+                    }
+                    result.?.submatch_id = submatch_id;
+                    result.?.num_submatches += 1;
+                },
                 .RESTORE_CFLAGS => {
                     self.cflags = self.stack.pop().cflags;
                 },
             }
         }
-        return result;
+        return result.?;
     }
 
     fn expand_macro(self: Parser) ?[]const u8 {
