@@ -1,5 +1,5 @@
 .{
-    .name = "zigex",
+    .name = "libzex",
     .version = "0.0.1",
 
     .dependencies = .{},

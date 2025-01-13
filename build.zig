@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const lib = b.addStaticLibrary(.{
-        .name = "zigex",
+        .name = "libzex",
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,

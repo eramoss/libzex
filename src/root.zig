@@ -5,8 +5,8 @@ comptime {
     _ = @import("parser.zig");
 }
 
-const Zigex = struct {
-    pub fn init(alloc: Allocator, pattern: []const u8) !Zigex {
+const Regex = struct {
+    pub fn init(alloc: Allocator, pattern: []const u8) !Regex {
         _ = alloc;
         _ = pattern;
     }
