@@ -436,22 +436,88 @@ const Parser = struct {
                                     },
                                 }
                             },
-                            '.' => {},
-                            '^' => {},
-                            '$' => {},
-                            else => {},
+                            '.' => {
+                                debug("Parser:  any symbol: {s}\n", .{self.re[self.re_i..]});
+                                if (self.cflags.reg_newline) {
+                                    const tmp1 = try AstNode.new_literal(0, '\n' - 1);
+                                    const tmp2 = try AstNode.new_literal('\n' + 1, 255); // max char
+                                    result = try AstNode.new_union(tmp1, tmp2);
+                                } else {
+                                    result = try AstNode.new_literal(0, 255);
+                                }
+                                self.re_i += 1;
+                            },
+                            '^' => {
+                                // beginning of line assertion
+                                // '^' has a special meaning everywhere in EREs, and in the
+                                // beginning of the RE and after \( is BREs.
+                                if (self.cflags.reg_extended or (self.re_i - 2 >= 0 and self.re[self.re_i - 2] == '\\' and self.re[self.re_i - 1] == '(') or self.re_i == 0) {
+                                    debug("Parser:  BOL: {s}\n", .{self.re[self.re_i..]});
+                                    result = try AstNode.new_literal(@intFromEnum(LeafType.ASSERTION), @intFromEnum(Assertion.ASSERT_AT_BOL));
+                                    self.re_i += 1;
+                                } else {
+                                    parse_literal = true;
+                                    break :ctx_blk;
+                                }
+                            },
+                            '$' => {
+                                // END of line assertion
+                                // '$' has a special meaning everywhere in EREs, and in the
+                                // end of the RE and before \) is BREs.
+                                if (self.cflags.reg_extended or (self.re_i + 2 < max_re_i and self.re[self.re_i + 1] == '\\' and self.re[self.re_i + 2] == ')') or self.re_i == max_re_i) {
+                                    debug("Parser:  EOL: {s}\n", .{self.re[self.re_i..]});
+                                    result = try AstNode.new_literal(@intFromEnum(LeafType.ASSERTION), @intFromEnum(Assertion.ASSERT_AT_EOL));
+                                    self.re_i += 1;
+                                } else {
+                                    parse_literal = true;
+                                    break :ctx_blk;
+                                }
+                            },
+                            else => {
+                                parse_literal = true;
+                                break :ctx_blk;
+                            },
                         }
                     }
-                    if (parse_literal) {
+                    if (parse_literal) PARSE_LITERAL: {
                         if (temp_cflags.hasAnyTrue() and self.re_i + 1 < max_re_i and self.re[self.re_i] == '\\' and self.re[self.re_i + 1] == 'E') {
                             debug("Parser:  end tmps: {s}\n", .{self.re[self.re_i..]});
                             self.cflags = temp_cflags;
                             temp_cflags = CompFlags.default;
                             self.re_i += 2;
                             try self.stack.append(StackType{ .symbol = Symbol.PIECE });
+                            break :PARSE_LITERAL;
                         }
-                    }
+                        // We are expecting an atom.  If the subexpression (or the whole REGEXP)
+                        // ends here, we interpret it as an empty expression
+                        // (which matches an empty string).
+                        const c = self.re[self.re_i];
+                        if (!self.cflags.reg_literal and
+                            (self.re_i >= max_re_i or
+                            c == '*' or
+                            (self.cflags.reg_extended and (c == '|' or c == '{' or c == '+' or c == '?')) or
+                            (!self.cflags.reg_extended and self.re_i + 1 < max_re_i and c == '\\' and self.re[self.re_i + 1] == '{')))
+                        {
+                            debug("Parser:  empty: {s}\n", .{self.re[self.re_i..]});
+                            result = try AstNode.new_literal(@intFromEnum(LeafType.EMPTY), -1);
+                            break :PARSE_LITERAL;
+                        }
 
+                        debug("Parser:  literal: {s}\n", .{self.re[self.re_i..]});
+                        // cant use `isalpha` function since are chars which is aplha but neither upper or lower.
+                        if (self.cflags.reg_icase and (std.ascii.isUpper(c) or std.ascii.isLower(c))) {
+                            const uc = std.ascii.toUpper(c);
+                            const lc = std.ascii.toLower(c);
+                            const tmp1 = try AstNode.new_literal(uc, lc);
+                            const tmp2 = try AstNode.new_literal(lc, uc);
+
+                            result = try AstNode.new_union(tmp1, tmp2);
+                        } else {
+                            result = try AstNode.new_literal(c, c);
+                        }
+                        self.re_i += 1;
+                        break :PARSE_LITERAL;
+                    }
                     break :PARSE_ATOM_BLK;
                 },
                 .MARK_FOR_SUBMATCH => {},
