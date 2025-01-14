@@ -38,7 +38,7 @@ const macros: []const Macro = &.{
     Macro{ .c = 'D', .expansion = "[^[:digit:]]" },
 };
 
-const Parser = struct {
+pub const Parser = struct {
     alloc: Allocator,
     stack: ArrayList(StackType),
 
@@ -579,7 +579,7 @@ const Parser = struct {
     }
 };
 
-const Flags = struct {
+pub const Flags = struct {
     /// This flag is set if the regexp uses approximate matching
     have_approx: bool,
     /// If this flag is set the top-level submatch is not captured.
@@ -587,62 +587,44 @@ const Flags = struct {
     /// The highest back reference or null if none seen so far
     max_backref: ?u32,
 
-    const default: Flags = .{
+    pub const default: Flags = .{
         .have_approx = false,
         .no_first_subm = false,
         .max_backref = null,
     };
 };
 
-const CompFlags = struct {
+pub const CompFlags = struct {
     reg_extended: bool,
     reg_icase: bool,
     reg_newline: bool,
     reg_nosub: bool,
-    reg_basic: bool,
+
     reg_literal: bool,
     reg_right_assoc: bool,
     reg_ungreedy: bool,
     reg_usebytes: bool,
-    reg_notbol: bool,
-    reg_noteol: bool,
-    reg_approx_matcher: bool,
-    reg_backtracking_matcher: bool,
 
-    const default: CompFlags = .{
+
+    pub const default: CompFlags = .{
         .reg_extended = false,
         .reg_icase = false,
         .reg_newline = false,
         .reg_nosub = false,
-        .reg_basic = false,
         .reg_literal = false,
         .reg_right_assoc = false,
         .reg_ungreedy = false,
         .reg_usebytes = false,
-        .reg_notbol = false,
-        .reg_noteol = false,
-        .reg_approx_matcher = false,
-        .reg_backtracking_matcher = false,
     };
     pub fn hasAnyTrue(self: CompFlags) bool {
         return self.reg_extended or
             self.reg_icase or
             self.reg_newline or
             self.reg_nosub or
-            self.reg_basic or
             self.reg_literal or
             self.reg_right_assoc or
             self.reg_ungreedy or
-            self.reg_usebytes or
-            self.reg_notbol or
-            self.reg_noteol or
-            self.reg_approx_matcher or
-            self.reg_backtracking_matcher;
+            self.reg_usebytes;
     }
 };
 
-test "try init parser" {
-    var p = try Parser.init(testing.allocator, "\\d{2}", Flags.default, CompFlags.default);
-    defer p.deinit();
-    _ = try p.parse();
-}
