@@ -14,7 +14,7 @@ DIRECTORY="zig-out/cbin"
 for file in "$DIRECTORY"/*; do
     if [[ -f "$file" && -x "$file" ]]; then
         echo "Executing $file"
-        "$file"  # Execute the file
+        "$file"  
     else
         echo "$file is not an executable file."
     fi
