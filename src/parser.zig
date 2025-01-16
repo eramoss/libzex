@@ -608,7 +608,6 @@ pub const CompFlags = struct {
     reg_ungreedy: bool,
     reg_usebytes: bool,
 
-    
     pub const default: CompFlags = .{
         .reg_extended = false,
         .reg_icase = false,
@@ -621,7 +620,7 @@ pub const CompFlags = struct {
     };
 
     pub fn fromInt(flags: i32) CompFlags {
-        return . {
+        return .{
             .reg_extended = flags & (1 << 0) != 0,
             .reg_icase = flags & (1 << 1) != 0,
             .reg_newline = flags & (1 << 2) != 0,
@@ -644,4 +643,3 @@ pub const CompFlags = struct {
             self.reg_usebytes;
     }
 };
-

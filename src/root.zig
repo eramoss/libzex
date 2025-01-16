@@ -18,8 +18,6 @@ pub const Regex = struct {
     }
 };
 
-
-
 // POSIX API
 pub const regex_t = packed struct {
     re_nsub: u32,
@@ -46,7 +44,8 @@ export fn regcomp(preg: *regex_t, regex: [*:0]const u8, cflags: i32) i32 {
     preg.*.value.* = Regex.init(alloc, slice, p.CompFlags.fromInt(cflags));
     const ast = preg.value.parser.parse() catch |err| {
         return Errors.intFromError(err);
-    };    _ = ast; // autofix
+    };
+    _ = ast; // autofix
     return 0;
 }
 export fn regexec(preg: *const regex_t, string: [*:0]const u8, nmatch: u32, pmatch: [*]regmatch_t, eflags: i32) i32 {
