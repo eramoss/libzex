@@ -605,7 +605,7 @@ pub const CompFlags = struct {
     reg_ungreedy: bool,
     reg_usebytes: bool,
 
-
+    
     pub const default: CompFlags = .{
         .reg_extended = false,
         .reg_icase = false,
@@ -616,6 +616,20 @@ pub const CompFlags = struct {
         .reg_ungreedy = false,
         .reg_usebytes = false,
     };
+
+    pub fn fromInt(flags: i32) CompFlags {
+        return . {
+            .reg_extended = flags & (1 << 0) != 0,
+            .reg_icase = flags & (1 << 1) != 0,
+            .reg_newline = flags & (1 << 2) != 0,
+            .reg_nosub = flags & (1 << 3) != 0,
+            .reg_literal = flags & (1 << 4) != 0,
+            .reg_right_assoc = flags & (1 << 5) != 0,
+            .reg_ungreedy = flags & (1 << 6) != 0,
+            .reg_usebytes = flags & (1 << 7) != 0,
+        };
+    }
+
     pub fn hasAnyTrue(self: CompFlags) bool {
         return self.reg_extended or
             self.reg_icase or

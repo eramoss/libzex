@@ -5,8 +5,8 @@ const p = @import("parser.zig");
 
 pub const Regex = struct {
     parser: p.Parser,
-    pub fn init(alloc: Allocator, pattern: []const u8) !Regex {
-        const parser = try p.Parser.init(alloc, pattern, p.Flags.default, p.CompFlags.default);
+    pub fn init(alloc: Allocator, pattern: []const u8, cflags: p.CompFlags) !Regex {
+        const parser = try p.Parser.init(alloc, pattern, p.Flags.default, cflags);
         return Regex {
             .parser = parser
         };
@@ -32,14 +32,13 @@ pub const regmatch_t = packed struct {
 pub const regoff_t = i32;
 
 export fn regcomp(preg: *regex_t, regex: [*:0]const u8, cflags: i32) i32 {
-    _ = cflags;
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const alloc = gpa.allocator();
     defer {_ =gpa.deinit();}
     const len = std.mem.len(regex);
     const slice = regex[0..len];
     preg.*.value = alloc.create(Regex) catch @panic("cannot alllocate regex");
-    preg.*.value.* = Regex.init(alloc, slice) catch @panic("cannot init struct regex");
+    preg.*.value.* = Regex.init(alloc, slice, p.CompFlags.fromInt(cflags)) catch @panic("cannot init struct regex");
 
     const ast = preg.value.parser.parse() catch @panic("cannot parse");
     _ = ast; // autofix

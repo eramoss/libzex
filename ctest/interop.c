@@ -7,7 +7,7 @@ int main() {
 
     const char *pattern = "^[a-zA-Z]+$"; 
 		printf("starting compile...\n");
-    int32_t result = regcomp(&preg, pattern, 0);
+    int32_t result = regcomp(&preg, pattern, 0b001001);
     if (result != 0) {
         char error_buffer[256];
         regerror(result, &preg, error_buffer, sizeof(error_buffer));
