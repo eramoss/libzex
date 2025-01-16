@@ -1,4 +1,4 @@
-CC = zig cc
+CC = gcc
 OUT_DIR = ../zig-out/cbin
 
 SRC_DIR = .

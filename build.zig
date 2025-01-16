@@ -11,6 +11,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .pic = true,
     });
+    lib.bundle_compiler_rt = true;
 
     b.installArtifact(lib);
 
