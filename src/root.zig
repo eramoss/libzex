@@ -38,6 +38,7 @@ export fn regcomp(preg: *regex_t, regex: [*:0]const u8, cflags: i32) i32 {
     defer {_ =gpa.deinit();}
     const len = std.mem.len(regex);
     const slice = regex[0..len];
+    preg.*.value = alloc.create(Regex) catch @panic("cannot alllocate regex");
     preg.*.value.* = Regex.init(alloc, slice) catch @panic("cannot init struct regex");
 
     const ast = preg.value.parser.parse() catch @panic("cannot parse");
