@@ -452,7 +452,7 @@ pub const Parser = struct {
                                 // beginning of line assertion
                                 // '^' has a special meaning everywhere in EREs, and in the
                                 // beginning of the RE and after \( is BREs.
-                                if (self.cflags.reg_extended or (self.re_i - 2 >= 0 and self.re[self.re_i - 2] == '\\' and self.re[self.re_i - 1] == '(') or self.re_i == 0) {
+                                if (self.cflags.reg_extended or self.re_i == 0 or (self.re_i - 2 >= 0 and self.re[self.re_i - 2] == '\\' and self.re[self.re_i - 1] == '(')) {
                                     debug("Parser:  BOL: {s}\n", .{self.re[self.re_i..]});
                                     result = try AstNode.new_literal(@intFromEnum(LeafType.ASSERTION), @intFromEnum(Assertion.ASSERT_AT_BOL));
                                     self.re_i += 1;
