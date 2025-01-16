@@ -1,0 +1,21 @@
+#!/bin/bash
+
+zig build
+make clean -C ctest
+make -C ctest
+
+
+echo " "
+zig build test
+
+echo " "
+DIRECTORY="zig-out/cbin"
+
+for file in "$DIRECTORY"/*; do
+    if [[ -f "$file" && -x "$file" ]]; then
+        echo "Executing $file"
+        "$file"  # Execute the file
+    else
+        echo "$file is not an executable file."
+    fi
+done
