@@ -1,3 +1,6 @@
+const Errors = @import("error.zig");
+const RegError = Errors.RegError;
+
 pub const LeafType = enum(i8) {
     EMPTY = -1,
     ASSERTION = -2,
@@ -21,21 +24,21 @@ pub const AstNode = struct {
     num_submatches: i32,
     submatch_id: i32,
 
-    pub fn new_catenation(left: *AstNode, right: *AstNode) !*AstNode {
+    pub fn new_catenation(left: *AstNode, right: *AstNode) RegError!*AstNode {
         _ = left;
         return right;
     }
-    pub fn new_union(left: *AstNode, right: *AstNode) !*AstNode {
+    pub fn new_union(left: *AstNode, right: *AstNode) RegError!*AstNode {
         _ = left;
         return right;
     }
-    pub fn new_iter(self: *AstNode, min: i32, max: i32, minimal: bool) !*AstNode {
+    pub fn new_iter(self: *AstNode, min: i32, max: i32, minimal: bool) RegError!*AstNode {
         _ = min;
         _ = max;
         _ = minimal;
         return self;
     }
-    pub fn new_literal(code_min: i32, code_max: i32) !*AstNode {
+    pub fn new_literal(code_min: i32, code_max: i32) RegError!*AstNode {
         _ = code_min;
         _ = code_max;
         return undefined;

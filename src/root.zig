@@ -1,15 +1,13 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const p = @import("parser.zig");
-
+const Errors = @import("error.zig");
 
 pub const Regex = struct {
     parser: p.Parser,
-    pub fn init(alloc: Allocator, pattern: []const u8, cflags: p.CompFlags) !Regex {
-        const parser = try p.Parser.init(alloc, pattern, p.Flags.default, cflags);
-        return Regex {
-            .parser = parser
-        };
+    pub fn init(alloc: Allocator, pattern: []const u8, cflags: p.CompFlags) Regex {
+        const parser = p.Parser.init(alloc, pattern, p.Flags.default, cflags);
+        return Regex{ .parser = parser };
     }
     pub fn deinit(alloc: Allocator) !void {
         _ = alloc;
@@ -19,6 +17,8 @@ pub const Regex = struct {
         return src;
     }
 };
+
+
 
 // POSIX API
 pub const regex_t = packed struct {
@@ -34,14 +34,19 @@ pub const regoff_t = i32;
 export fn regcomp(preg: *regex_t, regex: [*:0]const u8, cflags: i32) i32 {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const alloc = gpa.allocator();
-    defer {_ =gpa.deinit();}
+    defer {
+        _ = gpa.deinit();
+    }
     const len = std.mem.len(regex);
     const slice = regex[0..len];
-    preg.*.value = alloc.create(Regex) catch @panic("cannot alllocate regex");
-    preg.*.value.* = Regex.init(alloc, slice, p.CompFlags.fromInt(cflags)) catch @panic("cannot init struct regex");
 
-    const ast = preg.value.parser.parse() catch @panic("cannot parse");
-    _ = ast; // autofix
+    preg.*.value = alloc.create(Regex) catch |err| {
+        return Errors.intFromError(err);
+    };
+    preg.*.value.* = Regex.init(alloc, slice, p.CompFlags.fromInt(cflags));
+    const ast = preg.value.parser.parse() catch |err| {
+        return Errors.intFromError(err);
+    };    _ = ast; // autofix
     return 0;
 }
 export fn regexec(preg: *const regex_t, string: [*:0]const u8, nmatch: u32, pmatch: [*]regmatch_t, eflags: i32) i32 {
@@ -59,8 +64,6 @@ export fn regerror(errcode: i32, preg: *const regex_t, effbuf: [*:0]u8, errbuf_s
     _ = preg; // autofix
     return 0;
 }
-export fn regfree(preg: *regex_t)void{
+export fn regfree(preg: *regex_t) void {
     _ = preg; // autofix
 }
-
-

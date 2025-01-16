@@ -9,6 +9,8 @@ const ut = @import("utils.zig");
 const assert = std.debug.assert;
 const debug = std.debug.print;
 const testing = std.testing;
+const Errors = @import("error.zig");
+const RegError = Errors.RegError;
 
 const Symbol = enum { RE, ATOM, MARK_FOR_SUBMATCH, BRANCH, PIECE, CATENATION, POST_CATENATION, UNION, POST_UNION, POSTFIX, RESTORE_CFLAGS };
 const StackType = union(enum) {
@@ -48,7 +50,7 @@ pub const Parser = struct {
     submatch_id: i32,
     flags: Flags,
     cflags: CompFlags,
-    pub fn init(alloc: Allocator, re: []const u8, flags: Flags, cflags: CompFlags) !Parser {
+    pub fn init(alloc: Allocator, re: []const u8, flags: Flags, cflags: CompFlags) Parser {
         return Parser{
             .alloc = alloc,
             .stack = ArrayList(StackType).init(alloc),
@@ -64,7 +66,7 @@ pub const Parser = struct {
         self.stack.deinit();
     }
 
-    pub fn parse(self: *Parser) !*AstNode {
+    pub fn parse(self: *Parser) RegError!*AstNode {
         var result: ?*AstNode = null;
         var symbol: Symbol = undefined;
         const bottom = self.stack.items.len;
@@ -120,7 +122,7 @@ pub const Parser = struct {
                             (c == '\\' and self.re[self.re_i + 1] == ')'))
                         {
                             if (!self.cflags.reg_extended and depth == 0) {
-                                return error.ParenNotMatched;
+                                return RegError.REG_EPAREN;
                             }
                             debug("Parser:  group end: {s}\n", .{self.re[self.re_i..]});
                             assert(depth > 0);
@@ -197,7 +199,7 @@ pub const Parser = struct {
                                 const nc = self.re[self.re_i + 1];
                                 if (nc == '?') self.re_i += 1;
                                 if (nc == '*' or nc == '+')
-                                    return error.InvalidRepeatedChar;
+                                    return RegError.REG_BADRPT;
                             }
                             debug("Parser: minimal = {} star: {s}\n", .{ minimal, dbug_re });
                             self.re_i += 1;
@@ -285,11 +287,11 @@ pub const Parser = struct {
                                             if (self.re[self.re_i] == ')' and self.re_i < max_re_i) {
                                                 self.re_i += 1;
                                                 break :post_con;
-                                            } else return error.InvalidPatternOps;
+                                            } else return RegError.REG_BADPAT;
                                         } else if (self.re[self.re_i] == ')') {
                                             self.re_i += 1;
                                             break :post_con;
-                                        } else return error.InvalidPatterOps;
+                                        } else return RegError.REG_BADPAT;
                                     }
 
                                     // changes on cflags to the rest of enclousing group;
@@ -352,7 +354,7 @@ pub const Parser = struct {
                                     self.re_i += 2;
                                     break;
                                 }
-                                if (self.re_i + 1 >= max_re_i) return error.TrailingBackslash;
+                                if (self.re_i + 1 >= max_re_i) return RegError.REG_EESCAPE;
                                 if (self.re[self.re_i + 1] == 'Q') {
                                     debug("Parser:  tmp literal: {s}\n", .{self.re[self.re_i..]});
                                     self.cflags.reg_literal = true;
@@ -396,7 +398,7 @@ pub const Parser = struct {
                                                     tmp[1] = self.re[self.re_i];
                                                     self.re_i += 1;
                                                 }
-                                                const val = try std.fmt.parseInt(i32, tmp[0..1], 16);
+                                                const val = std.fmt.parseInt(i32, tmp[0..1], 16) catch return RegError.REG_BADPAT;
                                                 result = try AstNode.new_literal(val, val);
                                                 break;
                                             } else if (self.re_i < max_re_i) {
@@ -412,10 +414,11 @@ pub const Parser = struct {
                                                         self.re_i += 1;
                                                         continue;
                                                     }
-                                                    return error.UnmatchBraceIntervalOps;
+                                                    return RegError.REG_EBRACE;
                                                 }
                                                 self.re_i += 1;
-                                                const val = try std.fmt.parseInt(i32, tmp[0..7], 16);
+                                                const val = std.fmt.parseInt(i32, tmp[0..7], 16) catch return RegError.REG_BADPAT;
+
                                                 result = try AstNode.new_literal(val, val);
                                                 break;
                                             }
