@@ -43,6 +43,7 @@ const macros: []const Macro = &.{
 pub const Parser = struct {
     alloc: Allocator,
     stack: ArrayList(StackType),
+    tre_allocations: ArrayList(*AstNode),
 
     re: []const u8,
     re_i: u32,
@@ -54,6 +55,7 @@ pub const Parser = struct {
         return Parser{
             .alloc = alloc,
             .stack = ArrayList(StackType).init(alloc),
+            .tre_allocations = ArrayList(*AstNode).init(alloc),
             .re = re,
             .re_i = 0,
             .flags = flags,
@@ -64,6 +66,10 @@ pub const Parser = struct {
 
     pub fn deinit(self: Parser) void {
         self.stack.deinit();
+        for (self.tre_allocations.items) |v| {
+            self.alloc.destroy(v);
+        }
+        self.tre_allocations.deinit();
     }
 
     pub fn parse(self: *Parser) RegError!*AstNode {
@@ -151,7 +157,8 @@ pub const Parser = struct {
                 },
                 .POST_CATENATION => PARSE_POST_CAT_BLK: {
                     const tree: *AstNode = self.stack.pop().node; // asserts node after post catenation
-                    const tmp_node = try AstNode.new_catenation(tree, result.?);
+                    const tmp_node = try AstNode.new_catenation(self.alloc, tree, result.?);
+                    try self.queue_alloc(tmp_node);
                     result = tmp_node;
                     break :PARSE_POST_CAT_BLK;
                 },
@@ -175,7 +182,8 @@ pub const Parser = struct {
                 },
                 .POST_UNION => PARSE_POST_UNION_BLK: {
                     const tree: *AstNode = self.stack.pop().node; // asserts node after post catenation
-                    const tmp_node = try tree.new_union(result.?);
+                    const tmp_node = try AstNode.new_union(self.alloc, tree, result.?);
+                    try self.queue_alloc(tmp_node);
                     result = tmp_node;
                     break :PARSE_POST_UNION_BLK;
                 },
@@ -203,7 +211,8 @@ pub const Parser = struct {
                             }
                             debug("Parser: minimal = {} star: {s}\n", .{ minimal, dbug_re });
                             self.re_i += 1;
-                            result = try result.?.new_iter(rep_min, rep_max, minimal);
+                            result = try AstNode.new_iter(self.alloc, result.?, rep_min, rep_max, minimal);
+                            try self.queue_alloc(result.?);
                             try self.stack.append(StackType{ .symbol = Symbol.POSTFIX });
                         },
                         '\\' => {
@@ -227,7 +236,7 @@ pub const Parser = struct {
                             try self.parse_bound(&result.?);
                             try self.stack.append(StackType{ .symbol = Symbol.POSTFIX });
                         },
-                        else => break,
+                        else => break :PARSE_POSTFIX_BLK,
                     }
                     break :PARSE_POSTFIX_BLK;
                 },
@@ -325,7 +334,8 @@ pub const Parser = struct {
                                     debug("Parser:  empty: {s}\n", .{self.re[self.re_i..]});
                                     // expect atom, butreceive a subexp closed
                                     //  POSIX leaves that o impl def, here i interpret this as empty
-                                    result = try AstNode.new_literal(@intFromEnum(LeafType.EMPTY), -1);
+                                    result = try AstNode.new_literal(self.alloc, @intFromEnum(LeafType.EMPTY), -1);
+                                    try self.queue_alloc(result.?);
                                     if (!self.cflags.reg_extended) self.re_i -= 1;
                                 } else {
                                     parse_literal = true;
@@ -367,19 +377,26 @@ pub const Parser = struct {
                                 self.re_i += 1;
                                 switch (self.re[self.re_i]) {
                                     'b' => {
-                                        result = try AstNode.new_literal(@intFromEnum(LeafType.ASSERTION), @intFromEnum(Assertion.ASSERT_AT_WB));
+                                        result = try AstNode.new_literal(self.alloc, @intFromEnum(LeafType.ASSERTION), @intFromEnum(Assertion.ASSERT_AT_WB));
+                                        try self.queue_alloc(result.?);
                                         self.re_i += 1;
                                     },
                                     'B' => {
-                                        result = try AstNode.new_literal(@intFromEnum(LeafType.ASSERTION), @intFromEnum(Assertion.ASSERT_AT_WB_NEG));
+                                        result = try AstNode.new_literal(self.alloc, @intFromEnum(LeafType.ASSERTION), @intFromEnum(Assertion.ASSERT_AT_WB_NEG));
+                                        try self.queue_alloc(result.?);
+
                                         self.re_i += 1;
                                     },
                                     '<' => {
-                                        result = try AstNode.new_literal(@intFromEnum(LeafType.ASSERTION), @intFromEnum(Assertion.ASSERT_AT_BOW));
+                                        result = try AstNode.new_literal(self.alloc, @intFromEnum(LeafType.ASSERTION), @intFromEnum(Assertion.ASSERT_AT_BOW));
+                                        try self.queue_alloc(result.?);
+
                                         self.re_i += 1;
                                     },
                                     '>' => {
-                                        result = try AstNode.new_literal(@intFromEnum(LeafType.ASSERTION), @intFromEnum(Assertion.ASSERT_AT_EOW));
+                                        result = try AstNode.new_literal(self.alloc, @intFromEnum(LeafType.ASSERTION), @intFromEnum(Assertion.ASSERT_AT_EOW));
+                                        try self.queue_alloc(result.?);
+
                                         self.re_i += 1;
                                     },
                                     else => {
@@ -399,7 +416,9 @@ pub const Parser = struct {
                                                     self.re_i += 1;
                                                 }
                                                 const val = std.fmt.parseInt(i32, tmp[0..1], 16) catch return RegError.REG_BADPAT;
-                                                result = try AstNode.new_literal(val, val);
+                                                result = try AstNode.new_literal(self.alloc, val, val);
+                                                try self.queue_alloc(result.?);
+
                                                 break;
                                             } else if (self.re_i < max_re_i) {
                                                 // wide char
@@ -419,7 +438,9 @@ pub const Parser = struct {
                                                 self.re_i += 1;
                                                 const val = std.fmt.parseInt(i32, tmp[0..7], 16) catch return RegError.REG_BADPAT;
 
-                                                result = try AstNode.new_literal(val, val);
+                                                result = try AstNode.new_literal(self.alloc, val, val);
+                                                try self.queue_alloc(result.?);
+
                                                 break;
                                             }
                                         }
@@ -428,13 +449,17 @@ pub const Parser = struct {
                                             // backref
                                             const val = self.re[self.re_i] - '0';
                                             debug("Parser:  backref: {s}\n", .{self.re[(self.re_i - 1)..]});
-                                            result = try AstNode.new_literal(@intFromEnum(LeafType.BACKREF), val);
+                                            result = try AstNode.new_literal(self.alloc, @intFromEnum(LeafType.BACKREF), val);
+                                            try self.queue_alloc(result.?);
+
                                             self.flags.max_backref = @max(val, self.flags.max_backref orelse 0);
                                             self.re_i += 1;
                                         } else {
                                             // escaped char
                                             debug("Parser:  escaped: {s}\n", .{self.re[(self.re_i - 1)..]});
-                                            result = try AstNode.new_literal(self.re[self.re_i], self.re[self.re_i]);
+                                            result = try AstNode.new_literal(self.alloc, self.re[self.re_i], self.re[self.re_i]);
+                                            try self.queue_alloc(result.?);
+
                                             self.re_i += 1;
                                         }
                                     },
@@ -443,11 +468,17 @@ pub const Parser = struct {
                             '.' => {
                                 debug("Parser:  any symbol: {s}\n", .{self.re[self.re_i..]});
                                 if (self.cflags.reg_newline) {
-                                    const tmp1 = try AstNode.new_literal(0, '\n' - 1);
-                                    const tmp2 = try AstNode.new_literal('\n' + 1, 255); // max char
-                                    result = try AstNode.new_union(tmp1, tmp2);
+                                    const tmp1 = try AstNode.new_literal(self.alloc, 0, '\n' - 1);
+                                    try self.queue_alloc(tmp1);
+
+                                    const tmp2 = try AstNode.new_literal(self.alloc, '\n' + 1, 255); // max char
+                                    try self.queue_alloc(tmp2);
+
+                                    result = try AstNode.new_union(self.alloc, tmp1, tmp2);
+                                    try self.queue_alloc(result.?);
                                 } else {
-                                    result = try AstNode.new_literal(0, 255);
+                                    result = try AstNode.new_literal(self.alloc, 0, 255);
+                                    try self.queue_alloc(result.?);
                                 }
                                 self.re_i += 1;
                             },
@@ -457,7 +488,10 @@ pub const Parser = struct {
                                 // beginning of the RE and after \( is BREs.
                                 if (self.cflags.reg_extended or self.re_i == 0 or (self.re_i - 2 >= 0 and self.re[self.re_i - 2] == '\\' and self.re[self.re_i - 1] == '(')) {
                                     debug("Parser:  BOL: {s}\n", .{self.re[self.re_i..]});
-                                    result = try AstNode.new_literal(@intFromEnum(LeafType.ASSERTION), @intFromEnum(Assertion.ASSERT_AT_BOL));
+
+                                    result = try AstNode.new_literal(self.alloc, @intFromEnum(LeafType.ASSERTION), @intFromEnum(Assertion.ASSERT_AT_BOL));
+                                    try self.queue_alloc(result.?);
+
                                     self.re_i += 1;
                                 } else {
                                     parse_literal = true;
@@ -470,7 +504,9 @@ pub const Parser = struct {
                                 // end of the RE and before \) is BREs.
                                 if (self.cflags.reg_extended or (self.re_i + 2 < max_re_i and self.re[self.re_i + 1] == '\\' and self.re[self.re_i + 2] == ')') or self.re_i == max_re_i) {
                                     debug("Parser:  EOL: {s}\n", .{self.re[self.re_i..]});
-                                    result = try AstNode.new_literal(@intFromEnum(LeafType.ASSERTION), @intFromEnum(Assertion.ASSERT_AT_EOL));
+                                    result = try AstNode.new_literal(self.alloc, @intFromEnum(LeafType.ASSERTION), @intFromEnum(Assertion.ASSERT_AT_EOL));
+                                    try self.queue_alloc(result.?);
+
                                     self.re_i += 1;
                                 } else {
                                     parse_literal = true;
@@ -503,7 +539,9 @@ pub const Parser = struct {
                             (!self.cflags.reg_extended and self.re_i + 1 < max_re_i and c == '\\' and self.re[self.re_i + 1] == '{')))
                         {
                             debug("Parser:  empty: {s}\n", .{self.re[self.re_i..]});
-                            result = try AstNode.new_literal(@intFromEnum(LeafType.EMPTY), -1);
+                            result = try AstNode.new_literal(self.alloc, @intFromEnum(LeafType.EMPTY), -1);
+                            try self.queue_alloc(result.?);
+
                             break :PARSE_LITERAL;
                         }
 
@@ -512,12 +550,17 @@ pub const Parser = struct {
                         if (self.cflags.reg_icase and (std.ascii.isUpper(c) or std.ascii.isLower(c))) {
                             const uc = std.ascii.toUpper(c);
                             const lc = std.ascii.toLower(c);
-                            const tmp1 = try AstNode.new_literal(uc, lc);
-                            const tmp2 = try AstNode.new_literal(lc, uc);
+                            const tmp1 = try AstNode.new_literal(self.alloc, uc, lc);
+                            try self.queue_alloc(tmp1);
 
-                            result = try AstNode.new_union(tmp1, tmp2);
+                            const tmp2 = try AstNode.new_literal(self.alloc, lc, uc);
+                            try self.queue_alloc(tmp2);
+
+                            result = try AstNode.new_union(self.alloc, tmp1, tmp2);
+                            try self.queue_alloc(result.?);
                         } else {
-                            result = try AstNode.new_literal(c, c);
+                            result = try AstNode.new_literal(self.alloc, c, c);
+                            try self.queue_alloc(result.?);
                         }
                         self.re_i += 1;
                         break :PARSE_LITERAL;
@@ -528,9 +571,12 @@ pub const Parser = struct {
                     const submatch_id = self.stack.pop().int;
                     assert(result != null);
                     if (result.?.submatch_id >= 0) {
-                        const n = try AstNode.new_literal(@intFromEnum(LeafType.EMPTY), -1);
+                        const n = try AstNode.new_literal(self.alloc, @intFromEnum(LeafType.EMPTY), -1);
+                        try self.queue_alloc(n);
 
-                        var tmp_node = try AstNode.new_catenation(n, result.?);
+                        var tmp_node = try AstNode.new_catenation(self.alloc, n, result.?);
+                        try self.queue_alloc(tmp_node);
+
                         tmp_node.num_submatches = result.?.num_submatches;
                         result = tmp_node;
                     }
@@ -543,6 +589,10 @@ pub const Parser = struct {
             }
         }
         return result.?;
+    }
+
+    fn queue_alloc(self: *Parser, node: *AstNode) !void {
+        try self.tre_allocations.append(node);
     }
 
     fn expand_macro(self: Parser) ?[]const u8 {
@@ -643,3 +693,20 @@ pub const CompFlags = struct {
             self.reg_usebytes;
     }
 };
+
+test "allo" {
+    var cflags = CompFlags.default;
+    cflags.reg_extended = true;
+    cflags.reg_nosub = true;
+    const flags = Flags.default;
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer {
+        _ = gpa.deinit();
+    }
+    var p = Parser.init(allocator, "abc", flags, cflags);
+    defer p.deinit();
+    const tre = try p.parse();
+
+    ast.debug_ast(tre);
+}
