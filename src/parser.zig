@@ -77,7 +77,7 @@ pub const Parser = struct {
         var symbol: Symbol = undefined;
         const bottom = self.stack.items.len;
         var depth: u32 = 0;
-        const max_re_i = self.re.len - 1;
+        const max_re_i = self.re.len;
         const flags = self.flags;
         var temp_cflags = CompFlags.default;
 
@@ -704,7 +704,7 @@ test "allo" {
     defer {
         _ = gpa.deinit();
     }
-    var p = Parser.init(allocator, "abc", flags, cflags);
+    var p = Parser.init(allocator, "abt", flags, cflags);
     defer p.deinit();
     const tre = try p.parse();
 
