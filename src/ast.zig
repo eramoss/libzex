@@ -160,9 +160,9 @@ fn do_print(root: *AstNode, indent: usize) void {
     var code_max: i64 = 0;
     var pos: i32 = 0;
     const num_tags = root.num_tags;
-    _ = num_tags;
     const alloc = std.heap.page_allocator;
     var lit: Literal = undefined;
+    var iter: Iteration = undefined;
     debug("{s}", .{ut.repeat(alloc, " ", indent) catch ""});
     switch (root.value) {
         .literal => |v| {
@@ -191,14 +191,33 @@ fn do_print(root: *AstNode, indent: usize) void {
             } else if (is_parameter(lit)) {
                 print_params(lit.params);
                 debug("\n", .{});
-            } else {}
+            } else {
+                debug("literal, ({c}, {c}) ({d}, {d}), pos {}, sub {}, {} tags\n", .{ @as(u8, @intCast(code_min)), @as(u8, @intCast(code_max)), code_min, code_max, pos, root.submatch_id, num_tags });
+            }
         },
-        .iteration => {},
-        .union_t => {},
-        .catenation => {},
+        .iteration => |v| {
+            iter = v;
+            var minimal: *const [7:0]u8 = undefined;
+            if (iter.minimal) {
+                minimal = "minimal";
+            } else {
+                minimal = "greedy ";
+            }
+            debug("iteration ({d}, {d}), sub {d}, {d} tags, {s}\n", .{ iter.min, iter.max, root.submatch_id, num_tags, minimal });
+        },
+        .union_t => |v| {
+            debug("union, sub {}, {} tags\n", .{ root.submatch_id, num_tags });
+            do_print(v.left, indent + 2);
+            do_print(v.right, indent + 2);
+        },
+        .catenation => |v| {
+            debug("catenation, sub {}, {} tags\n", .{ root.submatch_id, num_tags });
+            do_print(v.left, indent + 2);
+            do_print(v.right, indent + 2);
+        },
     }
 }
 
 fn print_params(params: []i32) void {
-    _ = params;
+    debug("{any}", .{params});
 }

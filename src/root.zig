@@ -48,7 +48,8 @@ export fn regcomp(preg: *regex_t, regex: [*:0]const u8, cflags: i32) i32 {
     _ = ast; // autofix
     return 0;
 }
-export fn regexec(preg: *const regex_t, string: [*:0]const u8, nmatch: u32, pmatch: [*]regmatch_t, eflags: i32) i32 {
+export fn regexec(preg: *const regex_t, string: [*:0]const u8,
+nmatch: u32, pmatch: [*]regmatch_t, eflags: i32) i32 {
     _ = eflags; // autofix
     _ = pmatch; // autofix
     _ = nmatch; // autofix
@@ -60,7 +61,7 @@ export fn regerror(errcode: i32, preg: *const regex_t, effbuf: [*:0]u8, errbuf_s
     _ = errcode; // autofix
     _ = errbuf_size; // autofix
     _ = effbuf; // autofix
-    _ = preg; // autofix
+    _ = preg;// autofix
     return 0;
 }
 export fn regfree(preg: *regex_t) void {
